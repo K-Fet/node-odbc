@@ -154,6 +154,7 @@ class ODBC : public Napi::ObjectWrap<ODBC> {
   public:
     ODBC(const Napi::CallbackInfo& info);
     static Napi::FunctionReference constructor;
+    static Napi::ObjectReference constantsRef;
     static uv_mutex_t g_odbcMutex;
     
     static Napi::Object Init(Napi::Env env, Napi::Object exports);
