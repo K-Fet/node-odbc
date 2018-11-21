@@ -17,8 +17,7 @@
 #ifndef _SRC_ODBC_STATEMENT_H
 #define _SRC_ODBC_STATEMENT_H
 
-#include <napi.h>
-#include <uv.h>
+#include "declarations.h"
 
 class ODBCStatement : public Napi::ObjectWrap<ODBCStatement> {
   public:
@@ -35,23 +34,12 @@ class ODBCStatement : public Napi::ObjectWrap<ODBCStatement> {
 
     explicit ODBCStatement(const Napi::CallbackInfo& info);
     ~ODBCStatement();
-   
+
     Napi::Value ExecuteDirect(const Napi::CallbackInfo& info);
-    Napi::Value ExecuteDirectSync(const Napi::CallbackInfo& info);
-
     Napi::Value ExecuteNonQuery(const Napi::CallbackInfo& info);
-    Napi::Value ExecuteNonQuerySync(const Napi::CallbackInfo& info);
-
     Napi::Value Prepare(const Napi::CallbackInfo& info);
-    Napi::Value PrepareSync(const Napi::CallbackInfo& info);
-
     Napi::Value Bind(const Napi::CallbackInfo& info);
-    Napi::Value BindSync(const Napi::CallbackInfo& info);
-
     Napi::Value Execute(const Napi::CallbackInfo& info);
-    Napi::Value ExecuteSync(const Napi::CallbackInfo& info);
-
     Napi::Value Close(const Napi::CallbackInfo& info);
-    Napi::Value CloseSync(const Napi::CallbackInfo& info);
 };
 #endif

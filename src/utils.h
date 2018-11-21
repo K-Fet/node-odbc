@@ -5,9 +5,9 @@ Napi::Value EmptyCallback(const Napi::CallbackInfo& info);
 
 SQLTCHAR* NapiStringToSQLTCHAR(Napi::String string);
 
-void Fetch(QueryData *data);
+void FetchData(QueryData *data);
 
-void FetchAll(QueryData *data);
+void FetchAllData(QueryData *data);
 
 void BindColumns(QueryData *data);
 

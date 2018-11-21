@@ -287,7 +287,7 @@ class OpenAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(ODBC::GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
+      deferred.Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
          (char *) "[node-odbc] Error in ODBCConnection::OpenAsyncWorker"));
 
       // Empty callback
@@ -328,7 +328,7 @@ Napi::Value ODBCConnection::Open(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Napi::HandleScope scope(env);
 
-  SQLTCHAR *connectionString = ODBC::NapiStringToSQLTCHAR(info[0].As<Napi::String>());
+  SQLTCHAR *connectionString = NapiStringToSQLTCHAR(info[0].As<Napi::String>());
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
   Napi::Function callback = Napi::Function::New(env, EmptyCallback);
@@ -576,7 +576,7 @@ class QueryAsyncWorker : public Napi::AsyncWorker {
 
       if (data->paramCount > 0) {
         // binds all parameters to the query
-        ODBC::BindParameters(data);
+        BindParameters(data);
       }
 
       // execute the query directly
@@ -590,7 +590,7 @@ class QueryAsyncWorker : public Napi::AsyncWorker {
         SetError("ERROR");
         return;
       } else {
-        ODBC::BindColumns(data);
+        BindColumns(data);
         return;
       }
     }
@@ -636,7 +636,7 @@ class QueryAsyncWorker : public Napi::AsyncWorker {
 
       std::vector<napi_value> callbackArguments;
 
-      callbackArguments.push_back(ODBC::GetSQLError(env, SQL_HANDLE_DBC, data->hSTMT, (char *) "[node-odbc] Error in ODBCConnection::QueryAsyncWorker"));
+      callbackArguments.push_back(GetSQLError(env, SQL_HANDLE_DBC, data->hSTMT, (char *) "[node-odbc] Error in ODBCConnection::QueryAsyncWorker"));
       callbackArguments.push_back(env.Null());
 
       // return results object
@@ -850,7 +850,7 @@ class TablesAsyncWorker : public Napi::AsyncWorker {
       if (!SQL_SUCCEEDED(data->sqlReturnCode)) {
         SetError("ERROR");
       } else {
-        ODBC::BindColumns(data);
+        BindColumns(data);
         return;
       }
     }
@@ -955,10 +955,10 @@ Napi::Value ODBCConnection::Tables(const Napi::CallbackInfo& info) {
     return env.Null();
   }
 
-  if (!catalog.IsNull()) { data->catalog = ODBC::NapiStringToSQLTCHAR(catalog); }
-  if (!schema.IsNull()) { data->schema = ODBC::NapiStringToSQLTCHAR(schema); }
-  if (!table.IsNull()) { data->table = ODBC::NapiStringToSQLTCHAR(table); }
-  if (!type.IsNull()) { data->type = ODBC::NapiStringToSQLTCHAR(type); }
+  if (!catalog.IsNull()) { data->catalog = NapiStringToSQLTCHAR(catalog); }
+  if (!schema.IsNull()) { data->schema = NapiStringToSQLTCHAR(schema); }
+  if (!table.IsNull()) { data->table = NapiStringToSQLTCHAR(table); }
+  if (!type.IsNull()) { data->type = NapiStringToSQLTCHAR(type); }
 
   TablesAsyncWorker *worker = new TablesAsyncWorker(this, data, callback, deferred);
   worker->Queue();
@@ -999,11 +999,11 @@ class ColumnsAsyncWorker : public Napi::AsyncWorker {
       if (SQL_SUCCEEDED(data->sqlReturnCode)) {
 
         // manipulates the fields of QueryData object, which can then be fetched
-        ODBC::BindColumns(data);
+        BindColumns(data);
 
         //Only loop through the recordset if there are columns
         if (data->columnCount > 0) {
-          ODBC::FetchAll(data); // fetches all data and puts it in data->storedRows
+          FetchAllData(data); // fetches all data and puts it in data->storedRows
         }
 
         if (!SQL_SUCCEEDED(data->sqlReturnCode)) {
@@ -1107,10 +1107,10 @@ Napi::Value ODBCConnection::Columns(const Napi::CallbackInfo& info) {
     return env.Null();
   }
 
-  if (!catalog.IsNull()) { data->catalog = ODBC::NapiStringToSQLTCHAR(catalog); }
-  if (!schema.IsNull()) { data->schema = ODBC::NapiStringToSQLTCHAR(schema); }
-  if (!table.IsNull()) { data->table = ODBC::NapiStringToSQLTCHAR(table); }
-  if (!type.IsNull()) { data->type = ODBC::NapiStringToSQLTCHAR(type); }
+  if (!catalog.IsNull()) { data->catalog = NapiStringToSQLTCHAR(catalog); }
+  if (!schema.IsNull()) { data->schema = NapiStringToSQLTCHAR(schema); }
+  if (!table.IsNull()) { data->table = NapiStringToSQLTCHAR(table); }
+  if (!type.IsNull()) { data->type = NapiStringToSQLTCHAR(type); }
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
   Napi::Function callback = Napi::Function::New(env, EmptyCallback);

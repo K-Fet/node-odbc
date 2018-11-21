@@ -17,8 +17,7 @@
 #ifndef _SRC_ODBC_RESULT_H
 #define _SRC_ODBC_RESULT_H
 
-#include <napi.h>
-#include <uv.h>
+#include "declarations.h"
 
 class ODBCResult : public Napi::ObjectWrap<ODBCResult> {
 
@@ -31,8 +30,8 @@ class ODBCResult : public Napi::ObjectWrap<ODBCResult> {
     static Napi::String OPTION_FETCH_MODE;
     static Napi::FunctionReference constructor;
     static Napi::Object Init(Napi::Env env, Napi::Object exports);
-    
-    SQLRETURN Free();;
+
+    SQLRETURN Free();
 
     QueryData *data;
 
@@ -47,18 +46,13 @@ class ODBCResult : public Napi::ObjectWrap<ODBCResult> {
     ~ODBCResult();
 
     Napi::Value Fetch(const Napi::CallbackInfo& info);
-    Napi::Value FetchSync(const Napi::CallbackInfo& info);
-
     Napi::Value FetchAll(const Napi::CallbackInfo& info);
-    Napi::Value FetchAllSync(const Napi::CallbackInfo& info);
-
     Napi::Value Close(const Napi::CallbackInfo& info);
-    Napi::Value CloseSync(const Napi::CallbackInfo& info);
 
     Napi::Value MoreResultsSync(const Napi::CallbackInfo& info);
     Napi::Value GetColumnNamesSync(const Napi::CallbackInfo& info);
     Napi::Value GetRowCountSync(const Napi::CallbackInfo& info);
-    
+
     //property getter/setters
     Napi::Value FetchModeGetter(const Napi::CallbackInfo& info);
     void FetchModeSetter(const Napi::CallbackInfo& info, const Napi::Value& value);

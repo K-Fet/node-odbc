@@ -20,7 +20,7 @@ SQLTCHAR* NapiStringToSQLTCHAR(Napi::String string) {
   return &(*stringVector)[0];
 }
 
-void Fetch(QueryData *data) {
+void FetchData(QueryData *data) {
 
   if (SQL_SUCCEEDED(SQLFetch(data->hSTMT))) {
 
@@ -43,7 +43,7 @@ void Fetch(QueryData *data) {
   }
 }
 
-void FetchAll(QueryData *data) {
+void FetchAllData(QueryData *data) {
   // continue call SQLFetch, with results going in the boundRow array
   while(SQL_SUCCEEDED(SQLFetch(data->hSTMT))) {
 
