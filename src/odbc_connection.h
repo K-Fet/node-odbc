@@ -18,8 +18,7 @@
 #ifndef _SRC_ODBC_CONNECTION_H
 #define _SRC_ODBC_CONNECTION_H
 
-#include <napi.h>
-#include <uv.h>
+#include "declarations.h"
 
 class ODBCConnection : public Napi::ObjectWrap<ODBCConnection> {
 
@@ -39,7 +38,7 @@ class ODBCConnection : public Napi::ObjectWrap<ODBCConnection> {
     static Napi::String OPTION_PARAMS;
     static Napi::String OPTION_NORESULTS;
     static Napi::FunctionReference constructor;
-    
+
     static Napi::Object Init(Napi::Env env, Napi::Object exports);
 
     ODBCConnection(const Napi::CallbackInfo& info);
@@ -49,37 +48,21 @@ class ODBCConnection : public Napi::ObjectWrap<ODBCConnection> {
 
     // functions exposed by N-API to JavaScript
     Napi::Value Open(const Napi::CallbackInfo& info);
-    Napi::Value OpenSync(const Napi::CallbackInfo& info);
-
     Napi::Value Close(const Napi::CallbackInfo& info);
-    Napi::Value CloseSync(const Napi::CallbackInfo& info);
-
     Napi::Value CreateStatement(const Napi::CallbackInfo& info);
-    Napi::Value CreateStatementSync(const Napi::CallbackInfo& info);
-
     Napi::Value Query(const Napi::CallbackInfo& info);
-    Napi::Value QuerySync(const Napi::CallbackInfo& info);
-
     Napi::Value BeginTransaction(const Napi::CallbackInfo& info);
-    Napi::Value BeginTransactionSync(const Napi::CallbackInfo& info);
-
     Napi::Value EndTransaction(const Napi::CallbackInfo& info);
-    Napi::Value EndTransactionSync(const Napi::CallbackInfo& info);
-
     Napi::Value Columns(const Napi::CallbackInfo& info);
-    Napi::Value ColumnsSync(const Napi::CallbackInfo& info);
-
     Napi::Value Tables(const Napi::CallbackInfo& info);
-    Napi::Value TablesSync(const Napi::CallbackInfo& info);
-
     Napi::Value GetInfo(const Napi::CallbackInfo& info);
-    Napi::Value GetInfoSync(const Napi::CallbackInfo& info);
 
-    //Property Getter/Setterss
+    //Property Getter/Setters
     Napi::Value ConnectedGetter(const Napi::CallbackInfo& info);
-    // void ConnectedSetter(const Napi::CallbackInfo& info, const Napi::Value &value);
+
     Napi::Value ConnectTimeoutGetter(const Napi::CallbackInfo& info);
     void ConnectTimeoutSetter(const Napi::CallbackInfo& info, const Napi::Value &value);
+
     Napi::Value LoginTimeoutGetter(const Napi::CallbackInfo& info);
     void LoginTimeoutSetter(const Napi::CallbackInfo& info, const Napi::Value &value);
 
