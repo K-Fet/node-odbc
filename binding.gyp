@@ -9,12 +9,11 @@
         'src/odbc_result.cpp',
         'src/dynodbc.cpp'
       ],
-      'cflags' : ['-Wall', '-Wextra', '-Wno-unused-parameter'],
+      'cflags' : ['-Wall', '-Wextra', '-Wno-unused-parameter', '-DNAPI_DISABLE_CPP_EXCEPTIONS'],
       'include_dirs': [
-        "<!(node -e \"require('nan')\")"
+        '<!@(node -p "require(\'node-addon-api\').include")'
       ],
       'defines' : [
-        'UNICODE'
       ],
       'conditions' : [
         [ 'OS == "linux"', {
@@ -51,7 +50,8 @@
              [ '"<(os_name)"=="OS400"', {
                'ldflags': [
                   '-Wl,-brtl,-bnoquiet,-blibpath:/QOpenSys/pkgs/lib,-lodbc'
-                ]
+                ],
+                'cflags' : ['-std=c++0x', '-DNAPI_DISABLE_CPP_EXCEPTIONS', '-Wall', '-Wextra', '-Wno-unused-parameter', '-I/QOpenSys/usr/include', '-I/QOpenSys/pkgs/include']
              }]
           ]
         }]

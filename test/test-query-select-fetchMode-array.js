@@ -1,4 +1,4 @@
-var common = require("./common")
+const common = require("./common")
   , odbc = require("../")
   , db = odbc({ fetchMode : odbc.FETCH_ARRAY })
   , assert = require("assert")

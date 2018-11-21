@@ -17,85 +17,51 @@
 #ifndef _SRC_ODBC_RESULT_H
 #define _SRC_ODBC_RESULT_H
 
-#include <nan.h>
+#include <napi.h>
+#include <uv.h>
 
-class ODBCResult : public Nan::ObjectWrap {
+class ODBCResult : public Napi::ObjectWrap<ODBCResult> {
+
+  friend class FetchAsyncWorker;
+  friend class FetchAllAsyncWorker;
+  friend class CreateConnectionAsyncWorker;
+  friend class CloseAsyncWorker;
+
   public:
-   static Nan::Persistent<String> OPTION_FETCH_MODE;
-   static Nan::Persistent<Function> constructor;
-   static void Init(v8::Handle<Object> exports);
-   
-   void Free();
-   
-  protected:
-    ODBCResult() {};
+    static Napi::String OPTION_FETCH_MODE;
+    static Napi::FunctionReference constructor;
+    static Napi::Object Init(Napi::Env env, Napi::Object exports);
     
-    explicit ODBCResult(HENV hENV, HDBC hDBC, HSTMT hSTMT, bool canFreeHandle): 
-      Nan::ObjectWrap(),
-      m_hENV(hENV),
-      m_hDBC(hDBC),
-      m_hSTMT(hSTMT),
-      m_canFreeHandle(canFreeHandle) {};
-     
+    SQLRETURN Free();;
+
+    QueryData *data;
+
+    static HENV m_hENV;
+    static HDBC m_hDBC;
+    static HSTMT m_hSTMT;
+    static bool m_canFreeHandle;
+
+    int fetchMode;
+
+    explicit ODBCResult(const Napi::CallbackInfo& info);
     ~ODBCResult();
 
-    //constructor
-public:
-    static NAN_METHOD(New);
+    Napi::Value Fetch(const Napi::CallbackInfo& info);
+    Napi::Value FetchSync(const Napi::CallbackInfo& info);
 
-    //async methods
-    static NAN_METHOD(Fetch);
-protected:
-    static void UV_Fetch(uv_work_t* work_req);
-    static void UV_AfterFetch(uv_work_t* work_req, int status);
+    Napi::Value FetchAll(const Napi::CallbackInfo& info);
+    Napi::Value FetchAllSync(const Napi::CallbackInfo& info);
 
-public:
-    static NAN_METHOD(FetchAll);
-protected:
-    static void UV_FetchAll(uv_work_t* work_req);
-    static void UV_AfterFetchAll(uv_work_t* work_req, int status);
-    
-    //sync methods
-public:
-    static NAN_METHOD(CloseSync);
-    static NAN_METHOD(MoreResultsSync);
-    static NAN_METHOD(FetchSync);
-    static NAN_METHOD(FetchAllSync);
-    static NAN_METHOD(GetColumnNamesSync);
-    static NAN_METHOD(GetRowCountSync);
+    Napi::Value Close(const Napi::CallbackInfo& info);
+    Napi::Value CloseSync(const Napi::CallbackInfo& info);
+
+    Napi::Value MoreResultsSync(const Napi::CallbackInfo& info);
+    Napi::Value GetColumnNamesSync(const Napi::CallbackInfo& info);
+    Napi::Value GetRowCountSync(const Napi::CallbackInfo& info);
     
     //property getter/setters
-    static NAN_GETTER(FetchModeGetter);
-    static NAN_SETTER(FetchModeSetter);
-
-protected:
-    struct fetch_work_data {
-      Nan::Callback* cb;
-      ODBCResult *objResult;
-      SQLRETURN result;
-      
-      int fetchMode;
-      int count;
-      int errorCount;
-      Nan::Persistent<Array> rows;
-      Nan::Persistent<Object> objError;
-    };
-    
-    ODBCResult *self(void) { return this; }
-
-  protected:
-    HENV m_hENV;
-    HDBC m_hDBC;
-    HSTMT m_hSTMT;
-    bool m_canFreeHandle;
-    int m_fetchMode;
-    
-    uint16_t *buffer;
-    int bufferLength;
-    Column *columns;
-    short colCount;
+    Napi::Value FetchModeGetter(const Napi::CallbackInfo& info);
+    void FetchModeSetter(const Napi::CallbackInfo& info, const Napi::Value& value);
 };
-
-
 
 #endif
