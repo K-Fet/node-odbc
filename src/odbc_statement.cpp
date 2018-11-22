@@ -295,7 +295,6 @@ Napi::Value ODBCStatement::ExecuteDirect(const Napi::CallbackInfo& info) {
   Napi::HandleScope scope(env);
 
   REQ_STRO_ARG(0, sql);
-  Napi::String sql = info[0].ToString();
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
 
@@ -403,8 +402,6 @@ Napi::Value ODBCStatement::Prepare(const Napi::CallbackInfo& info) {
   Napi::HandleScope scope(env);
 
   REQ_STRO_ARG(0, sql);
-
-  Napi::String sql = info[0].ToString();
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
 

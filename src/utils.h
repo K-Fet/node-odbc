@@ -1,4 +1,4 @@
-##ifndef _SRC_UTILS_H
+#ifndef _SRC_UTILS_H
 #define _SRC_UTILS_H
 
 #include "declarations.h"

@@ -713,9 +713,9 @@ class GetInfoAsyncWorker : public DeferredAsyncWorker {
       Napi::Value res;
 
       #ifdef UNICODE
-        res = Napi::String::New(env, (const char16_t *)userName));
+        res = Napi::String::New(env, (const char16_t *)userName);
       #else
-        res = Napi::String::New(env, (const char *) userName));
+        res = Napi::String::New(env, (const char *) userName);
       #endif
 
       Resolve(res);
@@ -843,7 +843,7 @@ class TablesAsyncWorker : public DeferredAsyncWorker {
         // create a new ODBCResult object as a Napi::Value
         Napi::Value resultObject = ODBCResult::constructor.New(resultArguments);
 
-        Resolve(resultObject)
+        Resolve(resultObject);
       }
     }
 

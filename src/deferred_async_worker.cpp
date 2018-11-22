@@ -4,7 +4,7 @@
 DeferredAsyncWorker::DeferredAsyncWorker(Napi::Promise::Deferred deferred)
     : Napi::AsyncWorker(Napi::Function::New(Env(), EmptyCallback)), deferred(deferred) {}
 
-~DeferredAsyncWorker::DeferredAsyncWorker() {}
+DeferredAsyncWorker::~DeferredAsyncWorker() {}
 
 void DeferredAsyncWorker::OnOK() {
     Napi::Env env = Env();
@@ -17,7 +17,7 @@ void DeferredAsyncWorker::OnError(const Napi::Error &e) {
     Napi::Env env = Env();
     Napi::HandleScope scope(env);
 
-    Reject(e);
+    Reject(e.Value());
 }
 
 void DeferredAsyncWorker::Resolve(napi_value value) {
