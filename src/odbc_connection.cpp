@@ -652,7 +652,7 @@ Napi::Value ODBCConnection::Query(const Napi::CallbackInfo& info) {
   Napi::String sql = info[0].ToString();
 
   // check if parameters were passed or not
-  if (info.Length() == 3 && info[1].IsArray()) {
+  if (info.Length() == 2 && info[1].IsArray()) {
     Napi::Array parameterArray = info[1].As<Napi::Array>();
     data->params = GetParametersFromArray(&parameterArray, &(data->paramCount));
   } else {

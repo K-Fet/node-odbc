@@ -4,7 +4,6 @@
 #include "odbc_result.h"
 #include "odbc_statement.h"
 
-
 Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   ODBC::Init(env, exports);
   ODBCConnection::Init(env, exports);
