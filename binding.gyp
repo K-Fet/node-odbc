@@ -4,6 +4,8 @@
       "target_name": "odbc_bindings",
       "sources": [
         "src/main.cpp",
+        "src/utils.cpp",
+        "src/deferred_async_worker.cpp",
         "src/odbc.cpp",
         "src/odbc_connection.cpp",
         "src/odbc_statement.cpp",
@@ -70,7 +72,6 @@
                   ],
                   "cflags": [
                     "-std=c++0x",
-                    "-DNAPI_DISABLE_CPP_EXCEPTIONS",
                     "-Wall",
                     "-Wextra",
                     "-Wno-unused-parameter",

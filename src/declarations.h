@@ -1,3 +1,6 @@
+#ifndef _SRC_DECLARATIONS_H
+#define _SRC_DECLARATIONS_H
+
 #include <napi.h>
 #include <wchar.h>
 #include <stdlib.h>
@@ -220,3 +223,5 @@ typedef struct QueryData {
   (constructor).Set(Napi::String::New(env, #constant),                \
                 Napi::Number::New(env, constant),                               \
                 static_cast<v8::PropertyAttribute>(v8::ReadOnly|v8::DontDelete))
+
+#endif
