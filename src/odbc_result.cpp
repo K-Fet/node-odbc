@@ -14,7 +14,9 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-#include "odbc_result.h"*
+#include "odbc_result.h"
+#include "odbc.h"
+#include "utils.h"
 #include "deferred_async_worker.h"
 
 Napi::FunctionReference ODBCResult::constructor;
@@ -441,7 +443,7 @@ class CloseAsyncWorker : public DeferredAsyncWorker {
 
   public:
     CloseAsyncWorker(ODBCResult *odbcResultObject, int closeOption, Napi::Promise::Deferred deferred)
-    : DeferredAsyncWorker(callback), closeOption(closeOption), odbcResultObject(odbcResultObject) {}
+    : DeferredAsyncWorker(deferred), closeOption(closeOption), odbcResultObject(odbcResultObject) {}
 
     ~CloseAsyncWorker() {}
 

@@ -24,6 +24,8 @@
 #include "utils.h"
 #include "deferred_async_worker.h"
 #include "odbc_statement.h"
+#include "odbc_result.h"
+#include "odbc.h"
 
 Napi::FunctionReference ODBCStatement::constructor;
 
@@ -202,7 +204,7 @@ class ExecuteDirectAsyncWorker : public DeferredAsyncWorker {
 
       if (data->paramCount > 0) {
         // binds all parameters to the query
-        ODBC::BindParameters(data);
+        BindParameters(data);
       }
 
       // execute the query directly
@@ -213,7 +215,7 @@ class ExecuteDirectAsyncWorker : public DeferredAsyncWorker {
       );
 
       if (SQL_SUCCEEDED(data->sqlReturnCode)) {
-        ODBC::BindColumns(data);
+        BindColumns(data);
       } else {
         SetError("Error");
       }
@@ -433,7 +435,7 @@ class BindAsyncWorker : public DeferredAsyncWorker {
 
       if (data->paramCount > 0) {
         // binds all parameters to the query
-        ODBC::BindParameters(data);
+        BindParameters(data);
       }
     }
 
@@ -510,7 +512,7 @@ class ExecuteAsyncWorker : public DeferredAsyncWorker {
 
       if (SQL_SUCCEEDED(data->sqlReturnCode)) {
 
-        ODBC::BindColumns(data);
+        BindColumns(data);
 
       } else {
         SetError("ERROR");

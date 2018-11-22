@@ -24,7 +24,7 @@ class DeferredAsyncWorker : public Napi::AsyncWorker {
 public:
     DeferredAsyncWorker(Napi::Promise::Deferred deferred);
 
-    ~DeferredAsyncWorker() {}
+    ~DeferredAsyncWorker();
 
     virtual void Execute() = 0;
 

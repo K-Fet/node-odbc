@@ -2,8 +2,7 @@
 #include "utils.h"
 
 DeferredAsyncWorker::DeferredAsyncWorker(Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(Napi::Function::New(env, EmptyCallback)),
-     deferred(deferred) {}
+    : Napi::AsyncWorker(Napi::Function::New(Env(), EmptyCallback)), deferred(deferred) {}
 
 ~DeferredAsyncWorker::DeferredAsyncWorker() {}
 

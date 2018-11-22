@@ -17,6 +17,8 @@
 #include "odbc_connection.h"
 #include "utils.h"
 #include "deferred_async_worker.h"
+#include "odbc_statement.h"
+#include "odbc_result.h"
 #include <time.h>
 
 Napi::FunctionReference ODBCConnection::constructor;

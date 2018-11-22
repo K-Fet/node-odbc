@@ -1,3 +1,6 @@
+##ifndef _SRC_UTILS_H
+#define _SRC_UTILS_H
+
 #include "declarations.h"
 
  // Look at https://github.com/nodejs/abi-stable-node-addon-examples/issues/23
@@ -22,3 +25,5 @@ Napi::Object GetSQLError(Napi::Env env, SQLSMALLINT handleType, SQLHANDLE handle
 Napi::Object GetSQLError(Napi::Env env, SQLSMALLINT handleType, SQLHANDLE handle, const char* message);
 
 void DetermineParameterType(Napi::Value value, Parameter *param);
+
+#endif
