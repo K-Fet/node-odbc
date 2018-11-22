@@ -14,7 +14,8 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-#include "odbc_result.h"
+#include "odbc_result.h"*
+#include "deferred_async_worker.h"
 
 Napi::FunctionReference ODBCResult::constructor;
 Napi::String ODBCResult::OPTION_FETCH_MODE;
@@ -124,11 +125,11 @@ void ODBCResult::FetchModeSetter(const Napi::CallbackInfo& info, const Napi::Val
  *****************************************************************************/
 
 // FetchAsyncWorker, used by Fetch function (see below)
-class FetchAsyncWorker : public Napi::AsyncWorker {
+class FetchAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    FetchAsyncWorker(ODBCResult *odbcResultObject, QueryData *data, Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), odbcResultObject(odbcResultObject), data(data), deferred(deferred) {}
+    FetchAsyncWorker(ODBCResult *odbcResultObject, QueryData *data, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcResultObject(odbcResultObject), data(data) {}
 
     ~FetchAsyncWorker() {}
 
@@ -158,8 +159,7 @@ class FetchAsyncWorker : public Napi::AsyncWorker {
 
       Napi::Array rows = GetNapiRowData(env, &(data->storedRows), data->columns, data->columnCount, data->fetchMode);
 
-      deferred.Resolve(rows);
-      Callback().Call({});
+      Resolve(rows);
     }
 
     void OnError(const Napi::Error &error) {
@@ -167,12 +167,11 @@ class FetchAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT, (char *) "[node-odbc] Error in ODBCResult::FetchAsyncWorker"));
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT,
+            (char *) "[node-odbc] Error in ODBCResult::FetchAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCResult *odbcResultObject;
     QueryData *data;
 };
@@ -214,9 +213,8 @@ Napi::Value ODBCResult::Fetch(const Napi::CallbackInfo& info) {
   }
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  FetchAsyncWorker *worker = new FetchAsyncWorker(this, this->data, callback, deferred);
+  FetchAsyncWorker *worker = new FetchAsyncWorker(this, this->data, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -228,11 +226,11 @@ Napi::Value ODBCResult::Fetch(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // FetchAllAsyncWorker, used by FetchAll function (see below)
-class FetchAllAsyncWorker : public Napi::AsyncWorker {
+class FetchAllAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    FetchAllAsyncWorker(ODBCResult *odbcResultObject, QueryData *data, Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), odbcResultObject(odbcResultObject), data(data), deferred(deferred) {}
+    FetchAllAsyncWorker(ODBCResult *odbcResultObject, QueryData *data, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcResultObject(odbcResultObject), data(data) {}
 
     ~FetchAllAsyncWorker() {}
 
@@ -260,23 +258,18 @@ class FetchAllAsyncWorker : public Napi::AsyncWorker {
 
       Napi::Array rows = GetNapiRowData(env, &(data->storedRows), data->columns, data->columnCount, odbcResultObject->fetchMode);
 
-      deferred.Resolve(rows);
-      Callback().Call({});
+      Resolve(rows);
     }
 
     void OnError(const Napi::Error &e) {
 
-      printf("THERE WAS AN ERROR IN FETCH ALL!!");
-
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT));
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCResult *odbcResultObject;
     QueryData *data;
 };
@@ -319,9 +312,8 @@ Napi::Value ODBCResult::FetchAll(const Napi::CallbackInfo& info) {
   }
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  FetchAllAsyncWorker *worker = new FetchAllAsyncWorker(this, this->data, callback, deferred);
+  FetchAllAsyncWorker *worker = new FetchAllAsyncWorker(this, this->data, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -445,11 +437,11 @@ Napi::Value ODBCResult::GetRowCountSync(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // CloseAsyncWorker, used by Close function (see below)
-class CloseAsyncWorker : public Napi::AsyncWorker {
+class CloseAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    CloseAsyncWorker(ODBCResult *odbcResultObject, int closeOption, Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), closeOption(closeOption), odbcResultObject(odbcResultObject), deferred(deferred) {}
+    CloseAsyncWorker(ODBCResult *odbcResultObject, int closeOption, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(callback), closeOption(closeOption), odbcResultObject(odbcResultObject) {}
 
     ~CloseAsyncWorker() {}
 
@@ -479,17 +471,6 @@ class CloseAsyncWorker : public Napi::AsyncWorker {
       }
     }
 
-    void OnOK() {
-
-      DEBUG_PRINTF("ODBCResult::CloseAsyncWorker::OnOK\n");
-
-      Napi::Env env = Env();
-      Napi::HandleScope scope(env);
-
-      deferred.Resolve(env.Undefined());
-      Callback().Call({});
-    }
-
     void OnError(const Napi::Error& e) {
 
       DEBUG_PRINTF("ODBCResult::CloseAsyncWorker::OnError\n");
@@ -497,12 +478,11 @@ class CloseAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_STMT, odbcResultObject->m_hSTMT, (char *) "[node-odbc] Error in ODBCResult::CloseAsyncWorker Execute"));
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, odbcResultObject->m_hSTMT,
+            (char *) "[node-odbc] Error in ODBCResult::CloseAsyncWorker Execute"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     int closeOption;
     ODBCResult *odbcResultObject;
     SQLRETURN sqlReturnCode;
@@ -539,9 +519,8 @@ Napi::Value ODBCResult::Close(const Napi::CallbackInfo& info) {
   }
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  CloseAsyncWorker *worker = new CloseAsyncWorker(this, closeOption, callback, deferred);
+  CloseAsyncWorker *worker = new CloseAsyncWorker(this, closeOption, deferred);
   worker->Queue();
 
   return deferred.Promise();

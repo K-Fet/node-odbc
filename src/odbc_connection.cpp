@@ -16,6 +16,7 @@
 */
 #include "odbc_connection.h"
 #include "utils.h"
+#include "deferred_async_worker.h"
 #include <time.h>
 
 Napi::FunctionReference ODBCConnection::constructor;
@@ -188,13 +189,12 @@ void ODBCConnection::LoginTimeoutSetter(const Napi::CallbackInfo& info, const Na
  *****************************************************************************/
 
  // OpenAsyncWorker, used by Open function (see below)
-class OpenAsyncWorker : public Napi::AsyncWorker {
+class OpenAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    OpenAsyncWorker(ODBCConnection *odbcConnectionObject, SQLTCHAR *connectionStringPtr,
-                    Napi::Function& callback, Napi::Promise::Deferred deferred)
-     : Napi::AsyncWorker(callback), odbcConnectionObject(odbcConnectionObject),
-            connectionStringPtr(connectionStringPtr), deferred(deferred) {}
+    OpenAsyncWorker(ODBCConnection *odbcConnectionObject, SQLTCHAR *connectionStringPtr, Napi::Promise::Deferred deferred)
+     : DeferredAsyncWorker(deferred), odbcConnectionObject(odbcConnectionObject),
+            connectionStringPtr(connectionStringPtr) {}
 
     ~OpenAsyncWorker() {}
 
@@ -274,10 +274,7 @@ class OpenAsyncWorker : public Napi::AsyncWorker {
 
       odbcConnectionObject->connected = true;
 
-      deferred.Resolve(env.Null());
-
-      // Empty callback
-      Callback().Call({});
+      Resolve(env.Undefined());
     }
 
     void OnError(const Napi::Error &e) {
@@ -287,15 +284,11 @@ class OpenAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
-         (char *) "[node-odbc] Error in ODBCConnection::OpenAsyncWorker"));
-
-      // Empty callback
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
+            (char *) "[node-odbc] Error in ODBCConnection::OpenAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCConnection *odbcConnectionObject;
     SQLTCHAR *connectionStringPtr;
     SQLRETURN sqlReturnCode;
@@ -331,9 +324,8 @@ Napi::Value ODBCConnection::Open(const Napi::CallbackInfo& info) {
   SQLTCHAR *connectionString = NapiStringToSQLTCHAR(info[0].As<Napi::String>());
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  OpenAsyncWorker *worker = new OpenAsyncWorker(this, connectionString, callback, deferred);
+  OpenAsyncWorker *worker = new OpenAsyncWorker(this, connectionString, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -344,11 +336,11 @@ Napi::Value ODBCConnection::Open(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // CloseAsyncWorker, used by Close function (see below)
-class CloseAsyncWorker : public Napi::AsyncWorker {
+class CloseAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    CloseAsyncWorker(ODBCConnection *odbcConnectionObject, Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), odbcConnectionObject(odbcConnectionObject), deferred(deferred) {}
+    CloseAsyncWorker(ODBCConnection *odbcConnectionObject, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcConnectionObject(odbcConnectionObject) {}
 
     ~CloseAsyncWorker() {}
 
@@ -363,17 +355,6 @@ class CloseAsyncWorker : public Napi::AsyncWorker {
       }
     }
 
-    void OnOK() {
-
-      DEBUG_PRINTF("ODBCConnection::CloseAsyncWorker::OnOK\n");
-
-      Napi::Env env = Env();
-      Napi::HandleScope scope(env);
-
-      deferred.Resolve(env.Null());
-      Callback().Call({});
-    }
-
     void OnError(const Napi::Error &e) {
 
       DEBUG_PRINTF("ODBCConnection::CloseAsyncWorker::OnError\n");
@@ -381,13 +362,11 @@ class CloseAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC, (char *) "[node-odbc] Error in ODBCConnection::CloseAsyncWorker"));
-      Callback().Call({});
-
+      Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
+            (char *) "[node-odbc] Error in ODBCConnection::CloseAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCConnection *odbcConnectionObject;
     SQLRETURN sqlReturnCode;
 };
@@ -420,9 +399,8 @@ Napi::Value ODBCConnection::Close(const Napi::CallbackInfo& info) {
   Napi::HandleScope scope(env);
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  CloseAsyncWorker *worker = new CloseAsyncWorker(this, callback, deferred);
+  CloseAsyncWorker *worker = new CloseAsyncWorker(this, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -434,11 +412,11 @@ Napi::Value ODBCConnection::Close(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // CreateStatementAsyncWorker, used by CreateStatement function (see below)
-class CreateStatementAsyncWorker : public Napi::AsyncWorker {
+class CreateStatementAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    CreateStatementAsyncWorker(ODBCConnection *odbcConnectionObject, Napi::Function& callback, Napi::Promise::Deferred deferred)
-     : Napi::AsyncWorker(callback), odbcConnectionObject(odbcConnectionObject), deferred(deferred) {}
+    CreateStatementAsyncWorker(ODBCConnection *odbcConnectionObject, Napi::Promise::Deferred deferred)
+     : DeferredAsyncWorker(deferred), odbcConnectionObject(odbcConnectionObject) {}
 
     ~CreateStatementAsyncWorker() {}
 
@@ -481,8 +459,7 @@ class CreateStatementAsyncWorker : public Napi::AsyncWorker {
       // create a new ODBCStatement object as a Napi::Value
       Napi::Value statementObject = ODBCStatement::constructor.New(statementArguments);
 
-      deferred.Resolve(statementObject);
-      Callback().Call({});
+      Resolve(statementObject);
     }
 
     void OnError(const Napi::Error &e) {
@@ -496,12 +473,11 @@ class CreateStatementAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC, (char *) "[node-odbc] Error in ODBCConnection::CreateStatementAsyncWorker"));
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
+            (char *) "[node-odbc] Error in ODBCConnection::CreateStatementAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCConnection *odbcConnectionObject;
     SQLRETURN sqlReturnCode;
     HSTMT hSTMT;
@@ -536,9 +512,8 @@ Napi::Value ODBCConnection::CreateStatement(const Napi::CallbackInfo& info) {
   Napi::HandleScope scope(env);
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  CreateStatementAsyncWorker *worker = new CreateStatementAsyncWorker(this, callback, deferred);
+  CreateStatementAsyncWorker *worker = new CreateStatementAsyncWorker(this, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -549,16 +524,15 @@ Napi::Value ODBCConnection::CreateStatement(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // QueryAsyncWorker, used by Query function (see below)
-class QueryAsyncWorker : public Napi::AsyncWorker {
+class QueryAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    QueryAsyncWorker(ODBCConnection *odbcConnectionObject, QueryData *data, Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), odbcConnectionObject(odbcConnectionObject), data(data), deferred(deferred) {}
+    QueryAsyncWorker(ODBCConnection *odbcConnectionObject, QueryData *data, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcConnectionObject(odbcConnectionObject), data(data) {}
 
     ~QueryAsyncWorker() {}
 
     void Execute() {
-
 
       DEBUG_PRINTF("\nODBCConnection::QueryAsyncWorke::Execute");
 
@@ -611,7 +585,7 @@ class QueryAsyncWorker : public Napi::AsyncWorker {
 
         uv_mutex_unlock(&ODBC::g_odbcMutex);
 
-        deferred.Resolve(Napi::Boolean::New(env, true));
+        Resolve(Napi::Boolean::New(env, true));
       } else {
         // arguments for the ODBCResult constructor
         std::vector<napi_value> resultArguments;
@@ -624,9 +598,8 @@ class QueryAsyncWorker : public Napi::AsyncWorker {
         // create a new ODBCResult object as a Napi::Value
         Napi::Value resultObject = ODBCResult::constructor.New(resultArguments);
 
-        deferred.Resolve(resultObject);
+        Resolve(resultObject);
       }
-      Callback().Call({});
     }
 
     void OnError(const Napi::Error &e) {
@@ -634,17 +607,11 @@ class QueryAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
-
-      callbackArguments.push_back(GetSQLError(env, SQL_HANDLE_DBC, data->hSTMT, (char *) "[node-odbc] Error in ODBCConnection::QueryAsyncWorker"));
-      callbackArguments.push_back(env.Null());
-
-      // return results object
-      Callback().Call(callbackArguments);
+      Reject(GetSQLError(env, SQL_HANDLE_DBC, data->hSTMT,
+            (char *) "[node-odbc] Error in ODBCConnection::QueryAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCConnection *odbcConnectionObject;
     QueryData      *data;
 };
@@ -691,14 +658,13 @@ Napi::Value ODBCConnection::Query(const Napi::CallbackInfo& info) {
   }
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
   data->sql = NapiStringToSQLTCHAR(sql);
 
   // DEBUG_PRINTF("ODBCConnection::Query : sqlLen=%i, sqlSize=%i, sql=%s\n",
   //              data->sqlLen, data->sqlSize, (char*)data->sql);
 
-  QueryAsyncWorker *worker = new QueryAsyncWorker(this, data, callback, deferred);
+  QueryAsyncWorker *worker = new QueryAsyncWorker(this, data, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -709,11 +675,11 @@ Napi::Value ODBCConnection::Query(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // GetInfoAsyncWorker, used by GetInfo function (see below)
-class GetInfoAsyncWorker : public Napi::AsyncWorker {
+class GetInfoAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    GetInfoAsyncWorker(ODBCConnection *odbcConnectionObject, SQLUSMALLINT infoType, Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), odbcConnectionObject(odbcConnectionObject), infoType(infoType), deferred(deferred) {}
+    GetInfoAsyncWorker(ODBCConnection *odbcConnectionObject, SQLUSMALLINT infoType, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcConnectionObject(odbcConnectionObject), infoType(infoType) {}
 
     ~GetInfoAsyncWorker() {}
 
@@ -742,10 +708,6 @@ class GetInfoAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
-
-      callbackArguments.push_back(env.Null());
-
       Napi::Value res;
 
       #ifdef UNICODE
@@ -754,8 +716,7 @@ class GetInfoAsyncWorker : public Napi::AsyncWorker {
         res = Napi::String::New(env, (const char *) userName));
       #endif
 
-      deferred.Resolve(res);
-      Callback().Call({});
+      Resolve(res);
     }
 
     void OnError(const Napi::Error &e) {
@@ -763,12 +724,11 @@ class GetInfoAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC, (char *) "[node-odbc] Error in ODBCConnection::GetInfoAsyncWorker"));
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
+            (char *) "[node-odbc] Error in ODBCConnection::GetInfoAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCConnection *odbcConnectionObject;
     SQLUSMALLINT infoType;
     SQLTCHAR userName[255];
@@ -812,9 +772,8 @@ Napi::Value ODBCConnection::GetInfo(const Napi::CallbackInfo& info) {
   SQLUSMALLINT infoType = info[0].As<Napi::Number>().Int32Value();
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  GetInfoAsyncWorker *worker = new GetInfoAsyncWorker(this, infoType, callback, deferred);
+  GetInfoAsyncWorker *worker = new GetInfoAsyncWorker(this, infoType, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -825,11 +784,11 @@ Napi::Value ODBCConnection::GetInfo(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // TablesAsyncWorker, used by Tables function (see below)
-class TablesAsyncWorker : public Napi::AsyncWorker {
+class TablesAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    TablesAsyncWorker(ODBCConnection *odbcConnectionObject, QueryData *data, Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), odbcConnectionObject(odbcConnectionObject), data(data), deferred(deferred) {}
+    TablesAsyncWorker(ODBCConnection *odbcConnectionObject, QueryData *data, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcConnectionObject(odbcConnectionObject), data(data) {}
 
     ~TablesAsyncWorker() {}
 
@@ -867,7 +826,7 @@ class TablesAsyncWorker : public Napi::AsyncWorker {
       if (data->columnCount == 0) {
         //this most likely means that the query was something like
         //'insert into ....'
-        deferred.Resolve(env.Undefined());
+        Resolve(env.Undefined());
       } else {
 
         // arguments for the ODBCResult constructor
@@ -882,10 +841,8 @@ class TablesAsyncWorker : public Napi::AsyncWorker {
         // create a new ODBCResult object as a Napi::Value
         Napi::Value resultObject = ODBCResult::constructor.New(resultArguments);
 
-        deferred.Resolve(resultObject)
+        Resolve(resultObject)
       }
-
-      Callback().Call({});
     }
 
     void OnError(const Napi::Error &e) {
@@ -895,12 +852,11 @@ class TablesAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC, (char *) "[node-odbc] Error in ODBCConnection::TablesAsyncWorker"));
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
+            (char *) "[node-odbc] Error in ODBCConnection::TablesAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCConnection *odbcConnectionObject;
     QueryData *data;
 };
@@ -945,7 +901,6 @@ Napi::Value ODBCConnection::Tables(const Napi::CallbackInfo& info) {
   Napi::String type = info[3].IsNull() ? Napi::String(env, env.Null()) : info[3].ToString();
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
   QueryData* data = new QueryData();
 
@@ -960,7 +915,7 @@ Napi::Value ODBCConnection::Tables(const Napi::CallbackInfo& info) {
   if (!table.IsNull()) { data->table = NapiStringToSQLTCHAR(table); }
   if (!type.IsNull()) { data->type = NapiStringToSQLTCHAR(type); }
 
-  TablesAsyncWorker *worker = new TablesAsyncWorker(this, data, callback, deferred);
+  TablesAsyncWorker *worker = new TablesAsyncWorker(this, data, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -972,11 +927,11 @@ Napi::Value ODBCConnection::Tables(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // ColumnsAsyncWorker, used by Columns function (see below)
-class ColumnsAsyncWorker : public Napi::AsyncWorker {
+class ColumnsAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    ColumnsAsyncWorker(ODBCConnection *odbcConnectionObject, QueryData *data, Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), odbcConnectionObject(odbcConnectionObject), data(data), deferred(deferred) {}
+    ColumnsAsyncWorker(ODBCConnection *odbcConnectionObject, QueryData *data, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcConnectionObject(odbcConnectionObject), data(data) {}
 
     ~ColumnsAsyncWorker() {}
 
@@ -1026,7 +981,7 @@ class ColumnsAsyncWorker : public Napi::AsyncWorker {
         //free the handle
         data->sqlReturnCode = SQLFreeHandle(SQL_HANDLE_STMT, data->hSTMT);
 
-        deferred.Resolve(Napi::Boolean::New(env, true));
+        Resolve(Napi::Boolean::New(env, true));
 
       } else {
 
@@ -1042,11 +997,8 @@ class ColumnsAsyncWorker : public Napi::AsyncWorker {
         // create a new ODBCResult object as a Napi::Value
         Napi::Value resultObject = ODBCResult::constructor.New(resultArguments);
 
-        deferred.Resolve(resultObject);
+        Resolve(resultObject);
       }
-
-      // return results object
-      Callback().Call({});
     }
 
     void OnError(const Napi::Error &e) {
@@ -1054,12 +1006,11 @@ class ColumnsAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT, (char *) "[node-odbc] Error in ODBCConnection::ColumnsAsyncWorker"));
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT,
+            (char *) "[node-odbc] Error in ODBCConnection::ColumnsAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCConnection *odbcConnectionObject;
     QueryData *data;
 };
@@ -1113,9 +1064,8 @@ Napi::Value ODBCConnection::Columns(const Napi::CallbackInfo& info) {
   if (!type.IsNull()) { data->type = NapiStringToSQLTCHAR(type); }
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  ColumnsAsyncWorker *worker = new ColumnsAsyncWorker(this, data, callback, deferred);
+  ColumnsAsyncWorker *worker = new ColumnsAsyncWorker(this, data, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -1126,11 +1076,11 @@ Napi::Value ODBCConnection::Columns(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // BeginTransactionAsyncWorker, used by EndTransaction function (see below)
-class BeginTransactionAsyncWorker : public Napi::AsyncWorker {
+class BeginTransactionAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    BeginTransactionAsyncWorker(ODBCConnection *odbcConnectionObject, Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), odbcConnectionObject(odbcConnectionObject), deferred(deferred) {}
+    BeginTransactionAsyncWorker(ODBCConnection *odbcConnectionObject, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcConnectionObject(odbcConnectionObject) {}
 
     ~BeginTransactionAsyncWorker() {}
 
@@ -1148,17 +1098,6 @@ class BeginTransactionAsyncWorker : public Napi::AsyncWorker {
         }
     }
 
-    void OnOK() {
-
-      DEBUG_PRINTF("ODBCConnection::BeginTransactionAsyncWorker::OnOK\n");
-
-      Napi::Env env = Env();
-      Napi::HandleScope scope(env);
-
-      deferred.Resolve(env.Undefined());
-      Callback().Call({});
-    }
-
     void OnError(const Napi::Error &e) {
 
       DEBUG_PRINTF("ODBCConnection::BeginTransactionAsyncWorker::OnError\n");
@@ -1166,12 +1105,11 @@ class BeginTransactionAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC, (char *) "[node-odbc] Error in ODBCConnection::BeginTransactionAsyncWorker"));
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
+            (char *) "[node-odbc] Error in ODBCConnection::BeginTransactionAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCConnection *odbcConnectionObject;
     SQLRETURN sqlReturnCode;
 };
@@ -1205,9 +1143,8 @@ Napi::Value ODBCConnection::BeginTransaction(const Napi::CallbackInfo& info) {
   Napi::HandleScope scope(env);
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  BeginTransactionAsyncWorker *worker = new BeginTransactionAsyncWorker(this, callback, deferred);
+  BeginTransactionAsyncWorker *worker = new BeginTransactionAsyncWorker(this, deferred);
   worker->Queue();
 
   return deferred.Promise();
@@ -1219,13 +1156,11 @@ Napi::Value ODBCConnection::BeginTransaction(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
  // EndTransactionAsyncWorker, used by EndTransaction function (see below)
-class EndTransactionAsyncWorker : public Napi::AsyncWorker {
+class EndTransactionAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    EndTransactionAsyncWorker(ODBCConnection *odbcConnectionObject, SQLSMALLINT completionType,
-                              Napi::Function& callback, Napi::Promise::Deferred deferred)
-    : Napi::AsyncWorker(callback), odbcConnectionObject(odbcConnectionObject),
-      completionType(completionType), deferred(deferred) {}
+    EndTransactionAsyncWorker(ODBCConnection *odbcConnectionObject, SQLSMALLINT completionType, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcConnectionObject(odbcConnectionObject), completionType(completionType) {}
 
     ~EndTransactionAsyncWorker() {}
 
@@ -1251,17 +1186,6 @@ class EndTransactionAsyncWorker : public Napi::AsyncWorker {
       }
     }
 
-    void OnOK() {
-
-      DEBUG_PRINTF("ODBCConnection::EndTransactionAsyncWorker::OnOK\n");
-
-      Napi::Env env = Env();
-      Napi::HandleScope scope(env);
-
-      deferred.Resolve(env.Undefined());
-      Callback().Call({});
-    }
-
     void OnError(const Napi::Error &e) {
 
       DEBUG_PRINTF("ODBCConnection::EndTransactionAsyncWorker::OnError\n");
@@ -1269,13 +1193,11 @@ class EndTransactionAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-
-      deferred.Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC, (char *) "[node-odbc] Error in ODBCConnection::EndTransactionAsyncWorker"));
-      Callback().Call({});
+      Reject(GetSQLError(env, SQL_HANDLE_DBC, odbcConnectionObject->m_hDBC,
+            (char *) "[node-odbc] Error in ODBCConnection::EndTransactionAsyncWorker"));
     }
 
   private:
-    Napi::Promise::Deferred deferred;
     ODBCConnection *odbcConnectionObject;
     SQLSMALLINT completionType;
     SQLRETURN sqlReturnCode;
@@ -1314,9 +1236,8 @@ Napi::Value ODBCConnection::EndTransaction(const Napi::CallbackInfo& info) {
   SQLSMALLINT completionType = rollback.Value() ? SQL_ROLLBACK : SQL_COMMIT;
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  EndTransactionAsyncWorker *worker = new EndTransactionAsyncWorker(this, completionType, callback, deferred);
+  EndTransactionAsyncWorker *worker = new EndTransactionAsyncWorker(this, completionType, deferred);
   worker->Queue();
 
   return deferred.Promise();

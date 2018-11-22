@@ -21,6 +21,8 @@
 */
 
 #include <time.h>
+#include "utils.h"
+#include "deferred_async_worker.h"
 #include "odbc_statement.h"
 
 Napi::FunctionReference ODBCStatement::constructor;
@@ -86,12 +88,11 @@ void ODBCStatement::Free() {
  *****************************************************************************/
 
 // ExecuteNonQueryAsyncWorker, used by ExecuteNonQuery function (see below)
-class ExecuteNonQueryAsyncWorker : public Napi::AsyncWorker {
+class ExecuteNonQueryAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    ExecuteNonQueryAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Function& callback) : Napi::AsyncWorker(callback),
-    odbcStatementObject(odbcStatementObject),
-    data(odbcStatementObject->data) {}
+    ExecuteNonQueryAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Promise::Deferred deferred)
+    :DeferredAsyncWorker(deferred), odbcStatementObject(odbcStatementObject), data(odbcStatementObject->data) {}
 
     ~ExecuteNonQueryAsyncWorker() {}
 
@@ -126,10 +127,7 @@ class ExecuteNonQueryAsyncWorker : public Napi::AsyncWorker {
       SQLFreeStmt(data->hSTMT, SQL_CLOSE);
       uv_mutex_unlock(&ODBC::g_odbcMutex);
 
-      std::vector<napi_value> callbackArguments;
-      callbackArguments.push_back(env.Null());                       // callbackArguments[0]
-      callbackArguments.push_back(Napi::Number::New(env, rowCount)); // callbackArguments[1]
-      Callback().Call(callbackArguments);
+      Resolve(Napi::Number::New(env, rowCount));
     }
 
     void OnError(const Napi::Error &e) {
@@ -139,12 +137,9 @@ class ExecuteNonQueryAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT,
+            (char *) "[node-odbc] Error in ODBCStatement::ExecuteNonQueryAsyncWorker"));
 
-      callbackArguments.push_back(ODBC::GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT, (char *) "[node-odbc] Error in ODBCStatement::ExecuteNonQueryAsyncWorker"));
-      callbackArguments.push_back(env.Undefined());
-
-      Callback().Call(callbackArguments);
     }
 
   private:
@@ -178,17 +173,12 @@ Napi::Value ODBCStatement::ExecuteNonQuery(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Napi::HandleScope scope(env);
 
-  if(!info[0].IsFunction()){
-    Napi::Error::New(env, "Argument 1 Must be a function").ThrowAsJavaScriptException();
-    return env.Null();
-  }
+  Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
 
-  Napi::Function callback = info[0].As<Napi::Function>();
-
-  ExecuteNonQueryAsyncWorker *worker = new ExecuteNonQueryAsyncWorker(this, callback);
+  ExecuteNonQueryAsyncWorker *worker = new ExecuteNonQueryAsyncWorker(this, deferred);
   worker->Queue();
 
-  return env.Undefined();
+  return deferred.Promise();
 }
 
 /******************************************************************************
@@ -196,12 +186,11 @@ Napi::Value ODBCStatement::ExecuteNonQuery(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // ExecuteDirectAsyncWorker, used by ExecuteDirect function (see below)
-class ExecuteDirectAsyncWorker : public Napi::AsyncWorker {
+class ExecuteDirectAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    ExecuteDirectAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Function& callback) : Napi::AsyncWorker(callback),
-    odbcStatementObject(odbcStatementObject),
-    data(odbcStatementObject->data) {}
+    ExecuteDirectAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcStatementObject(odbcStatementObject), data(odbcStatementObject->data) {}
 
     ~ExecuteDirectAsyncWorker() {}
 
@@ -236,36 +225,28 @@ class ExecuteDirectAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
+      //check to see if the result set has columns
+      if (data->columnCount == 0) {
+        //this most likely means that the query was something like
+        //'insert into ....'
 
+        Resolve(env.Undefined());
 
-        //check to see if the result set has columns
-        if (data->columnCount == 0) {
-          //this most likely means that the query was something like
-          //'insert into ....'
+      } else {
 
-          callbackArguments.push_back(env.Null());
-          callbackArguments.push_back(env.Undefined());
+        std::vector<napi_value> resultArguments;
+        resultArguments.push_back(Napi::External<HENV>::New(env, &(odbcStatementObject->m_hENV)));
+        resultArguments.push_back(Napi::External<HDBC>::New(env, &(odbcStatementObject->m_hDBC)));
+        resultArguments.push_back(Napi::External<HSTMT>::New(env, &(data->hSTMT)));
+        resultArguments.push_back(Napi::Boolean::New(env, false)); // canFreeHandle
 
-        } else {
+        resultArguments.push_back(Napi::External<QueryData>::New(env, data));
 
-          std::vector<napi_value> resultArguments;
-          resultArguments.push_back(Napi::External<HENV>::New(env, &(odbcStatementObject->m_hENV)));
-          resultArguments.push_back(Napi::External<HDBC>::New(env, &(odbcStatementObject->m_hDBC)));
-          resultArguments.push_back(Napi::External<HSTMT>::New(env, &(data->hSTMT)));
-          resultArguments.push_back(Napi::Boolean::New(env, false)); // canFreeHandle
+        // create a new ODBCResult object as a Napi::Value
+        Napi::Value resultObject = ODBCResult::constructor.New(resultArguments);
 
-          resultArguments.push_back(Napi::External<QueryData>::New(env, data));
-
-          // create a new ODBCResult object as a Napi::Value
-          Napi::Value resultObject = ODBCResult::constructor.New(resultArguments);
-
-          callbackArguments.push_back(env.Null());
-          callbackArguments.push_back(resultObject);
-
+        Resolve(resultObject);
       }
-
-      Callback().Call(callbackArguments);
     }
 
     void OnError(const Napi::Error &e) {
@@ -275,12 +256,8 @@ class ExecuteDirectAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
-
-      callbackArguments.push_back(ODBC::GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT, (char *) "[node-odbc] Error in ODBCStatement::ExecuteDirectAsyncWorker"));
-      callbackArguments.push_back(env.Undefined());
-
-      Callback().Call(callbackArguments);
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT,
+            (char *) "[node-odbc] Error in ODBCStatement::ExecuteDirectAsyncWorker"));
     }
 
   private:
@@ -314,22 +291,18 @@ Napi::Value ODBCStatement::ExecuteDirect(const Napi::CallbackInfo& info) {
   DEBUG_PRINTF("ODBCStatement::ExecuteDirect\n");
   Napi::Env env = info.Env();
   Napi::HandleScope scope(env);
-  // REQ_STRO_ARG(0, sql);
-  // REQ_FUN_ARG(1, callback);
-  if(!info[0].IsString() || !info[1].IsFunction()){
-    Napi::TypeError::New(env, "Argument 1 must be a string , Argument 2 must be a function.").ThrowAsJavaScriptException();
-    return env.Null();
-  }
 
+  REQ_STRO_ARG(0, sql);
   Napi::String sql = info[0].ToString();
-  Napi::Function callback = info[1].As<Napi::Function>();
 
-  data->sql = ODBC::NapiStringToSQLTCHAR(sql);
+  Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
 
-  ExecuteDirectAsyncWorker *worker = new ExecuteDirectAsyncWorker(this, callback);
+  data->sql = NapiStringToSQLTCHAR(sql);
+
+  ExecuteDirectAsyncWorker *worker = new ExecuteDirectAsyncWorker(this, deferred);
   worker->Queue();
 
-  return env.Undefined();
+  return deferred.Promise();
 
 }
 
@@ -338,12 +311,11 @@ Napi::Value ODBCStatement::ExecuteDirect(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // PrepareAsyncWorker, used by Prepare function (see below)
-class PrepareAsyncWorker : public Napi::AsyncWorker {
+class PrepareAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    PrepareAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Function& callback) : Napi::AsyncWorker(callback),
-    odbcStatementObject(odbcStatementObject),
-    data(odbcStatementObject->data) {}
+    PrepareAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcStatementObject(odbcStatementObject), data(odbcStatementObject->data) {}
 
     ~PrepareAsyncWorker() {}
 
@@ -382,11 +354,7 @@ class PrepareAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
-      callbackArguments.push_back(env.Null());
-      callbackArguments.push_back(Napi::Boolean::New(env, true));
-      Callback().Call(callbackArguments);
-
+      Resolve(Napi::Boolean::New(env, true));
     }
 
     void OnError(const Napi::Error &e) {
@@ -394,12 +362,8 @@ class PrepareAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
-
-      callbackArguments.push_back(ODBC::GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT, (char *) "[node-odbc] Error in ODBCStatement::PrepareAsyncWorker"));
-      callbackArguments.push_back(Napi::Boolean::New(env, false));
-
-      Callback().Call(callbackArguments);
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT,
+            (char *) "[node-odbc] Error in ODBCStatement::PrepareAsyncWorker"));
     }
 
   private:
@@ -436,20 +400,18 @@ Napi::Value ODBCStatement::Prepare(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Napi::HandleScope scope(env);
 
-  if(!info[0].IsString() || !info[1].IsFunction()){
-    Napi::TypeError::New(env, "Argument 0 must be a string , Argument 1 must be a function.").ThrowAsJavaScriptException();
-    return env.Null();
-  }
+  REQ_STRO_ARG(0, sql);
 
   Napi::String sql = info[0].ToString();
-  Napi::Function callback = info[1].As<Napi::Function>();
 
-  data->sql = ODBC::NapiStringToSQLTCHAR(sql);
+  Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
 
-  PrepareAsyncWorker *worker = new PrepareAsyncWorker(this, callback);
+  data->sql = NapiStringToSQLTCHAR(sql);
+
+  PrepareAsyncWorker *worker = new PrepareAsyncWorker(this, deferred);
   worker->Queue();
 
-  return env.Undefined();
+  return deferred.Promise();
 }
 
 /******************************************************************************
@@ -457,12 +419,11 @@ Napi::Value ODBCStatement::Prepare(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // BindAsyncWorker, used by Bind function (see below)
-class BindAsyncWorker : public Napi::AsyncWorker {
+class BindAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    BindAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Function& callback) : Napi::AsyncWorker(callback),
-    odbcStatementObject(odbcStatementObject),
-    data(odbcStatementObject->data) {}
+    BindAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcStatementObject(odbcStatementObject), data(odbcStatementObject->data) {}
 
     ~BindAsyncWorker() { }
 
@@ -485,29 +446,18 @@ class BindAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
-
-      callbackArguments.push_back(env.Null());
-      callbackArguments.push_back(Napi::Boolean::New(env, true));
-
-      Callback().Call(callbackArguments);
+      Resolve(Napi::Boolean::New(env, true));
     }
 
     void OnError(const Napi::Error &e) {
 
       printf("BindAsyncWorker::OnError\n");
 
-      DEBUG_PRINTF("ODBCStatement::UV_AfterBind\n");
-
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
-
-      callbackArguments.push_back(ODBC::GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT, (char *) "[node-odbc] Error in ODBCStatement::BindAsyncWorker"));
-      callbackArguments.push_back(Napi::Boolean::New(env, false));
-
-      Callback().Call(callbackArguments);
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT,
+            (char *) "[node-odbc] Error in ODBCStatement::BindAsyncWorker"));
     }
 
   private:
@@ -522,20 +472,21 @@ Napi::Value ODBCStatement::Bind(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Napi::HandleScope scope(env);
 
-  if ( !info[0].IsArray() || !info[1].IsFunction() ) {
+  if (!info[0].IsArray()) {
     Napi::Error::New(env, "Argument 1 must be an Array").ThrowAsJavaScriptException();
     return env.Null();
   }
 
   Napi::Array parameterArray = info[0].As<Napi::Array>();
-  Napi::Function callback = info[1].As<Napi::Function>();
 
-  this->data->params = ODBC::GetParametersFromArray(&parameterArray, &(data->paramCount));
+  Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
 
-  BindAsyncWorker *worker = new BindAsyncWorker(this, callback);
+  this->data->params = GetParametersFromArray(&parameterArray, &(data->paramCount));
+
+  BindAsyncWorker *worker = new BindAsyncWorker(this, deferred);
   worker->Queue();
 
-  return env.Undefined();
+  return deferred.Promise();
 }
 
 
@@ -544,11 +495,10 @@ Napi::Value ODBCStatement::Bind(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // ExecuteAsyncWorker, used by Execute function (see below)
-class ExecuteAsyncWorker : public Napi::AsyncWorker {
+class ExecuteAsyncWorker : public DeferredAsyncWorker {
   public:
-    ExecuteAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Function& callback) : Napi::AsyncWorker(callback),
-      odbcStatementObject(odbcStatementObject),
-      data(odbcStatementObject->data) {}
+    ExecuteAsyncWorker(ODBCStatement *odbcStatementObject, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcStatementObject(odbcStatementObject), data(odbcStatementObject->data) {}
 
     ~ExecuteAsyncWorker() {}
 
@@ -586,12 +536,7 @@ class ExecuteAsyncWorker : public Napi::AsyncWorker {
       // create a new ODBCResult object as a Napi::Value
       Napi::Value resultObject = ODBCResult::constructor.New(resultArguments);
 
-      std::vector<napi_value> callbackArguments;
-
-      callbackArguments.push_back(env.Null());
-      callbackArguments.push_back(resultObject);
-
-      Callback().Call(callbackArguments);
+      Resolve(resultObject);
     }
 
     void OnError(const Napi::Error &e) {
@@ -601,12 +546,9 @@ class ExecuteAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
 
-      callbackArguments.push_back(ODBC::GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT, (char *) "[node-odbc] Error in ODBCStatement::ExecuteAsyncWorker"));
-      callbackArguments.push_back(Napi::Boolean::New(env, false));
-
-      Callback().Call(callbackArguments);
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT,
+            (char *) "[node-odbc] Error in ODBCStatement::ExecuteAsyncWorker"));
     }
 
   private:
@@ -620,12 +562,12 @@ Napi::Value ODBCStatement::Execute(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Napi::HandleScope scope(env);
 
-  REQ_FUN_ARG(0, callback);
+  Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
 
-  ExecuteAsyncWorker *worker = new ExecuteAsyncWorker(this, callback);
+  ExecuteAsyncWorker *worker = new ExecuteAsyncWorker(this, deferred);
   worker->Queue();
 
-  return env.Undefined();
+  return deferred.Promise();
 }
 
 /******************************************************************************
@@ -633,12 +575,11 @@ Napi::Value ODBCStatement::Execute(const Napi::CallbackInfo& info) {
  *****************************************************************************/
 
 // CloseAsyncWorker, used by Close function (see below)
-class CloseAsyncWorker : public Napi::AsyncWorker {
+class CloseAsyncWorker : public DeferredAsyncWorker {
   public:
-    CloseAsyncWorker(ODBCStatement *odbcStatementObject, int closeOption, Napi::Function& callback) : Napi::AsyncWorker(callback),
-      odbcStatementObject(odbcStatementObject),
-      closeOption(closeOption),
-      data(odbcStatementObject->data) {}
+    CloseAsyncWorker(ODBCStatement *odbcStatementObject, int closeOption, Napi::Promise::Deferred deferred)
+    : DeferredAsyncWorker(deferred), odbcStatementObject(odbcStatementObject),
+        closeOption(closeOption), data(odbcStatementObject->data) {}
 
     ~CloseAsyncWorker() {}
 
@@ -661,18 +602,6 @@ class CloseAsyncWorker : public Napi::AsyncWorker {
       DEBUG_PRINTF("ODBCStatement::CloseAsyncWorker::Execute()\n");
     }
 
-    void OnOK() {
-
-      DEBUG_PRINTF("ODBCStatement::CloseAsyncWorker::OnOk()\n");
-
-      Napi::Env env = Env();
-      Napi::HandleScope scope(env);
-
-      std::vector<napi_value> callbackArguments;
-      callbackArguments.push_back(env.Null());
-      Callback().Call(callbackArguments);
-    }
-
     void OnError(const Napi::Error &e) {
 
       DEBUG_PRINTF("ODBCStatement::CloseAsyncWorker::OnError()\n");
@@ -680,9 +609,8 @@ class CloseAsyncWorker : public Napi::AsyncWorker {
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
-      std::vector<napi_value> callbackArguments;
-      callbackArguments.push_back(ODBC::GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT, (char *) "[node-odbc] Error in ODBCStatement::CloseAsyncWorker"));
-      Callback().Call(callbackArguments);
+      Reject(GetSQLError(env, SQL_HANDLE_STMT, data->hSTMT,
+            (char *) "[node-odbc] Error in ODBCStatement::CloseAsyncWorker"));
     }
 
   private:
@@ -698,15 +626,16 @@ Napi::Value ODBCStatement::Close(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Napi::HandleScope scope(env);
 
-  if (info.Length() != 2 || !info[0].IsNumber() || !info[1].IsFunction()) {
-    Napi::TypeError::New(env, "close takes two arguments (closeOption [int], callback [function])").ThrowAsJavaScriptException();
+  if (info.Length() == 0 || !info[0].IsNumber()) {
+    Napi::TypeError::New(env, "close take 1 argument (closeOption [int])").ThrowAsJavaScriptException();
   }
 
   int closeOption = info[0].ToNumber().Int32Value();
-  Napi::Function callback = info[1].As<Napi::Function>();
 
-  CloseAsyncWorker *worker = new CloseAsyncWorker(this, closeOption, callback);
+  Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
+
+  CloseAsyncWorker *worker = new CloseAsyncWorker(this, closeOption, deferred);
   worker->Queue();
 
-  return env.Undefined();
+  return deferred.Promise();
 }

@@ -20,6 +20,7 @@
 
 #include "odbc.h"
 #include "utils.h"
+#include "deferred_async_worker.h"
 #include "odbc_connection.h"
 
 #ifdef dynodbc
@@ -104,11 +105,11 @@ void ODBC::Free() {
  * CreateConnection
  */
 
-class CreateConnectionAsyncWorker : public Napi::AsyncWorker {
+class CreateConnectionAsyncWorker : public DeferredAsyncWorker {
 
   public:
-    CreateConnectionAsyncWorker(ODBC *odbcObject, Napi::Function& callback, Napi::Promise::Deferred deferred)
-      : Napi::AsyncWorker(callback), odbcObject(odbcObject), deferred(deferred) {}
+    CreateConnectionAsyncWorker(ODBC *odbcObject, Napi::Promise::Deferred deferred)
+      : DeferredAsyncWorker(deferred), odbcObject(odbcObject) {}
 
     ~CreateConnectionAsyncWorker() {}
 
@@ -130,9 +131,7 @@ class CreateConnectionAsyncWorker : public Napi::AsyncWorker {
       if (!SQL_SUCCEEDED(sqlReturnCode)) {
         // Return the SQLError
 
-        deferred.Reject(GetSQLError(env, SQL_HANDLE_ENV, odbcObject->m_hEnv));
-        // Call empty function
-        Callback().Call({});
+        Reject(GetSQLError(env, SQL_HANDLE_ENV, odbcObject->m_hEnv));
       } else {
         // Return a connection
 
@@ -146,15 +145,12 @@ class CreateConnectionAsyncWorker : public Napi::AsyncWorker {
         // Create a new ODBCConnection object as a Napi::Value
         Napi::Value connectionObject = ODBCConnection::constructor.New(connectionArguments);
 
-        deferred.Resolve(connectionObject);
-        // Call empty function
-        Callback().Call({});
+        Resolve(connectionObject);
       }
     }
 
   private:
     ODBC *odbcObject;
-    Napi::Promise::Deferred deferred;
     SQLRETURN sqlReturnCode;
     SQLHDBC hDBC;
 };
@@ -167,9 +163,8 @@ Napi::Value ODBC::CreateConnection(const Napi::CallbackInfo& info) {
   Napi::HandleScope scope(env);
 
   Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(info.Env());
-  Napi::Function callback = Napi::Function::New(env, EmptyCallback);
 
-  CreateConnectionAsyncWorker *worker = new CreateConnectionAsyncWorker(this, callback, deferred);
+  CreateConnectionAsyncWorker *worker = new CreateConnectionAsyncWorker(this, deferred);
   worker->Queue();
 
   return deferred.Promise();
